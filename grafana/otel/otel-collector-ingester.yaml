@@ -1,0 +1,208 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  default: http://otel-collector-ingester
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-ingester
+  name: endpoint-otel-collector-ingester
+  namespace: otel
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-ingester
+  name: otel-collector-ingester
+  namespace: otel
+---
+apiVersion: v1
+data:
+  otel-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+      prometheus/otel-collector:
+        config:
+          scrape_configs:
+            - job_name: otel-collector
+              scrape_interval: 10s
+              static_configs:
+                - targets:
+                    - localhost:8888
+    exporters:
+      logging: {}
+      loki:
+        endpoint: http://loki:3100/loki/api/v1/push
+        tls:
+          insecure: true
+      prometheusremotewrite/mimir:
+        endpoint: http://mimir:9009/api/v1/push
+        tls:
+          insecure: true
+      otlp/tempo:
+        endpoint: http://tempo:4317
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        metrics:
+          receivers:
+            - otlp
+            - prometheus/otel-collector
+          exporters:
+            - prometheusremotewrite/mimir
+            - logging
+        traces:
+          receivers:
+            - otlp
+          exporters:
+            - otlp/tempo
+            - logging
+        logs:
+          receivers:
+            - otlp
+          processors:
+            - resource
+            - attributes
+          exporters:
+            - loki
+            - logging
+    processors:
+      batch: {}
+      attributes:
+        actions:
+          - action: insert
+            key: loki.attribute.labels
+            value: app,namespace,pod,container,node_name,job,filename,stream
+      resource:
+        attributes:
+          - action: insert
+            key: loki.format
+            value: raw
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-ingester
+  name: otel-collector-ingester-config
+  namespace: otel
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-ingester
+  name: otel-collector-ingester
+  namespace: otel
+spec:
+  ports:
+  - name: grpc-otlp
+    port: 4317
+    protocol: TCP
+    targetPort: grpc-otlp
+  - name: http-metrics
+    port: 8888
+    protocol: TCP
+    targetPort: http-metrics
+  selector:
+    app: otel-collector-ingester
+status:
+  loadBalancer: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-ingester
+  name: otel-collector-ingester-nodeport
+  namespace: otel
+spec:
+  ports:
+  - name: grpc-otlp
+    nodePort: 34317
+    port: 34317
+    protocol: TCP
+    targetPort: grpc-otlp
+  selector:
+    app: otel-collector-ingester
+  type: NodePort
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: otel-collector-ingester-config,otel-collector-ingester
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-ingester
+  name: otel-collector-ingester
+  namespace: otel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector-ingester
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/otel-collector-ingester: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        hash.configmap.octohelm.tech/otel-collector-ingester-config: 76646dad0d170d8a530095976218c11b111e2ba2383ec60b975ea395e4c54ed7
+        reload.octohelm.tech/configmap: otel-collector-ingester-config,otel-collector-ingester
+      creationTimestamp: null
+      labels:
+        app: otel-collector-ingester
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - --config=/conf/otel/otel-config.yaml
+        envFrom:
+        - configMapRef:
+            name: otel-collector-ingester
+        image:  docker.io/otel/opentelemetry-collector-contrib:0.80.0
+        name: otel-collector
+        ports:
+        - containerPort: 4317
+          name: grpc-otlp
+          protocol: TCP
+        - containerPort: 8888
+          name: http-metrics
+          protocol: TCP
+        resources: {}
+        volumeMounts:
+        - mountPath: /conf/otel/otel-config.yaml
+          name: otel-collector-ingester-config
+          subPath: otel-config.yaml
+      volumes:
+      - configMap:
+          name: otel-collector-ingester-config
+        name: otel-collector-ingester-config
+status: {}

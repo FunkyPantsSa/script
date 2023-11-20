@@ -1,0 +1,251 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel-agent
+spec: {}
+status: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: promtail
+  name: promtail
+  namespace: otel-agent
+---
+apiVersion: v1
+data:
+  promtail.yml: |
+    server:
+      log_level: info
+      http_listen_port: 3101
+    client:
+      url: http://otel-collector-agent:3100/loki/api/v1/push
+    positions:
+      filename: /var/lib/promtail/positions.yaml
+    scrape_configs:
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          - cri: {}
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels:
+              - __meta_kubernetes_pod_controller_name
+            regex: ([0-9a-z-.]+?)(-[0-9a-f]{8,10})?
+            action: replace
+            target_label: __tmp_controller_name
+          - source_labels:
+              - __meta_kubernetes_pod_label_app_kubernetes_io_name
+              - __meta_kubernetes_pod_label_app
+              - __tmp_controller_name
+              - __meta_kubernetes_pod_name
+            regex: ^;*([^;]+)(;.*)?$
+            action: replace
+            target_label: app
+          - source_labels:
+              - __meta_kubernetes_pod_label_app_kubernetes_io_component
+              - __meta_kubernetes_pod_label_component
+            regex: ^;*([^;]+)(;.*)?$
+            action: replace
+            target_label: component
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_pod_node_name
+            target_label: node_name
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_namespace
+            target_label: namespace
+          - action: replace
+            replacement: $1
+            separator: /
+            source_labels:
+              - namespace
+              - app
+            target_label: job
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_pod_name
+            target_label: pod
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_pod_container_name
+            target_label: container
+          - action: replace
+            replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+          - action: replace
+            regex: true/(.*)
+            replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_annotationpresent_kubernetes_io_config_hash
+              - __meta_kubernetes_pod_annotation_kubernetes_io_config_hash
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: promtail
+  name: promtail-config
+  namespace: otel-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: promtail
+  name: promtail
+  namespace: otel-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: promtail
+  name: promtail
+  namespace: otel-agent
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: promtail
+  name: promtail
+  namespace: otel-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: promtail
+subjects:
+- kind: ServiceAccount
+  name: promtail
+  namespace: otel-agent
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: promtail,promtail-config
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: promtail
+  name: promtail
+  namespace: otel-agent
+spec:
+  selector:
+    matchLabels:
+      app: promtail
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/promtail: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        hash.configmap.octohelm.tech/promtail-config: aca81e89d663be1bee286b046a0c57fa760c2282989040525a690dc903093d93
+        reload.octohelm.tech/configmap: promtail,promtail-config
+      creationTimestamp: null
+      labels:
+        app: promtail
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - -config.file=/etc/promtail/promtail.yml
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        envFrom:
+        - configMapRef:
+            name: promtail
+        image:  docker.io/grafana/promtail:2.8.2
+        name: promtail
+        ports:
+        - containerPort: 3101
+          name: http-metrics
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3101
+        resources:
+          limits:
+            cpu: 200m
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          runAsGroup: 0
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /var/lib/docker/containers
+          name: promtail-containers
+          readOnly: true
+        - mountPath: /data
+          name: promtail-data
+          readOnly: true
+        - mountPath: /var/log/pods
+          name: promtail-pods
+          readOnly: true
+        - mountPath: /var/lib/promtail
+          name: promtail-positions
+        - mountPath: /etc/promtail
+          name: promtail-config
+      serviceAccountName: promtail
+      volumes:
+      - hostPath:
+          path: /var/lib/docker/containers
+        name: promtail-containers
+      - hostPath:
+          path: /data
+        name: promtail-data
+      - hostPath:
+          path: /var/log/pods
+        name: promtail-pods
+      - hostPath:
+          path: /var/lib/promtail
+        name: promtail-positions
+      - configMap:
+          name: promtail-config
+        name: promtail-config
+  updateStrategy: {}
+status:
+  currentNumberScheduled: 0
+  desiredNumberScheduled: 0
+  numberMisscheduled: 0
+  numberReady: 0

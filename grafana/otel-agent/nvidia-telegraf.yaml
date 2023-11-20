@@ -1,0 +1,103 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel-agent
+spec: {}
+status: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: nvidia-telegraf
+  name: nvidia-telegraf
+  namespace: otel-agent
+---
+apiVersion: v1
+data:
+  telegraf.conf: |-
+    [agent]
+    hostname = "${HOSTNAME}"
+
+    [[inputs.nvidia_smi]]
+    bin_path = "/usr/bin/nvidia-smi"
+
+    [[processors.converter]]
+    [processors.converter.fields]
+    tag=["driver_version","cuda_version"]
+
+    [[outputs.opentelemetry]]
+    service_address = "otel-collector-agent:4317"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: nvidia-telegraf
+  name: nvidia-telegraf-config
+  namespace: otel-agent
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: nvidia-telegraf-config,nvidia-telegraf
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: nvidia-telegraf
+  name: nvidia-telegraf
+  namespace: otel-agent
+spec:
+  selector:
+    matchLabels:
+      app: nvidia-telegraf
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/nvidia-telegraf: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        hash.configmap.octohelm.tech/nvidia-telegraf-config: 367b171296609452ccf0d54738d6a062bfb7343a797d3bd763434699713dcc1f
+        reload.octohelm.tech/configmap: nvidia-telegraf-config,nvidia-telegraf
+      creationTimestamp: null
+      labels:
+        app: nvidia-telegraf
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.count
+                operator: Exists
+      containers:
+      - env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: utility
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: all
+        envFrom:
+        - configMapRef:
+            name: nvidia-telegraf
+        image:  docker.io/library/telegraf:1.27.1
+        name: telegraf
+        resources: {}
+        volumeMounts:
+        - mountPath: /etc/telegraf/telegraf.conf
+          name: nvidia-telegraf-config
+          subPath: telegraf.conf
+      runtimeClassName: nvidia
+      volumes:
+      - configMap:
+          name: nvidia-telegraf-config
+        name: nvidia-telegraf-config
+  updateStrategy: {}
+status:
+  currentNumberScheduled: 0
+  desiredNumberScheduled: 0
+  numberMisscheduled: 0
+  numberReady: 0

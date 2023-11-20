@@ -1,0 +1,219 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel-agent
+spec: {}
+status: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: metrics-collector
+  name: metrics-collector
+  namespace: otel-agent
+---
+apiVersion: v1
+data:
+  otel-config.yaml: |
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+            - scheme: https
+              bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+              job_name: integrations/kubernetes/cadvisor
+              kubernetes_sd_configs:
+                - role: node
+              tls_config:
+                ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                insecure_skip_verify: false
+                server_name: kubernetes
+              relabel_configs:
+                - replacement: kubernetes.default.svc.cluster.local:443
+                  target_label: __address__
+                - regex: (.+)
+                  replacement: /api/v1/nodes/$${1}/proxy/metrics/cadvisor
+                  source_labels:
+                    - __meta_kubernetes_node_name
+                  target_label: __metrics_path__
+            - scheme: https
+              bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+              job_name: integrations/kubernetes/kubelet
+              kubernetes_sd_configs:
+                - role: node
+              tls_config:
+                ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                insecure_skip_verify: false
+                server_name: kubernetes
+              relabel_configs:
+                - replacement: kubernetes.default.svc.cluster.local:443
+                  target_label: __address__
+                - regex: (.+)
+                  replacement: /api/v1/nodes/$${1}/proxy/metrics
+                  source_labels:
+                    - __meta_kubernetes_node_name
+                  target_label: __metrics_path__
+            - job_name: integrations/kubernetes/kube-state-metrics
+              kubernetes_sd_configs:
+                - role: pod
+              relabel_configs:
+                - action: keep
+                  regex: kube-state-metrics
+                  source_labels:
+                    - __meta_kubernetes_pod_label_app
+            - job_name: integrations/node_exporter
+              kubernetes_sd_configs:
+                - namespaces:
+                    names:
+                      - otel-agent
+                  role: pod
+              relabel_configs:
+                - action: keep
+                  regex: node-exporter.*
+                  source_labels:
+                    - __meta_kubernetes_pod_label_app
+                - action: replace
+                  source_labels:
+                    - __meta_kubernetes_pod_node_name
+                  target_label: instance
+                - action: replace
+                  source_labels:
+                    - __meta_kubernetes_namespace
+                  target_label: namespace
+    exporters:
+      logging: {}
+      otlp:
+        endpoint: http://otel-collector-agent:4317
+        tls:
+          insecure: true
+    processors:
+      batch: {}
+    service:
+      pipelines:
+        metrics:
+          receivers:
+            - prometheus
+          processors:
+            - batch
+          exporters:
+            - otlp
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: metrics-collector
+  name: metrics-collector-config
+  namespace: otel-agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: metrics-collector
+  name: metrics-collector
+  namespace: otel-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: metrics-collector
+  name: metrics-collector
+  namespace: otel-agent
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: metrics-collector
+  name: metrics-collector
+  namespace: otel-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: metrics-collector
+subjects:
+- kind: ServiceAccount
+  name: metrics-collector
+  namespace: otel-agent
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: metrics-collector-config,metrics-collector
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: metrics-collector
+  name: metrics-collector
+  namespace: otel-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metrics-collector
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/metrics-collector: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        hash.configmap.octohelm.tech/metrics-collector-config: a95f7eecb707de41f9f3625ea17c7af3d685052abe17d803c0ef540e44cd92bf
+        reload.octohelm.tech/configmap: metrics-collector-config,metrics-collector
+      creationTimestamp: null
+      labels:
+        app: metrics-collector
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - --config=/conf/otel/otel-config.yaml
+        envFrom:
+        - configMapRef:
+            name: metrics-collector
+        image:  docker.io/otel/opentelemetry-collector-contrib:0.80.0
+        name: otel-collector
+        resources: {}
+        volumeMounts:
+        - mountPath: /conf/otel/otel-config.yaml
+          name: metrics-collector-config
+          subPath: otel-config.yaml
+      serviceAccountName: metrics-collector
+      volumes:
+      - configMap:
+          name: metrics-collector-config
+        name: metrics-collector-config
+status: {}

@@ -1,0 +1,101 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel-agent
+spec: {}
+status: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: node-exporter
+  name: node-exporter
+  namespace: otel-agent
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: node-exporter
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: node-exporter
+  name: node-exporter
+  namespace: otel-agent
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/node-exporter: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        reload.octohelm.tech/configmap: node-exporter
+      creationTimestamp: null
+      labels:
+        app: node-exporter
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - --path.procfs=/host/proc
+        - --path.sysfs=/host/sys
+        - --path.rootfs=/host/root
+        - --web.listen-address=[$(HOST_IP)]:9100
+        env:
+        - name: HOST_IP
+          value: 0.0.0.0
+        envFrom:
+        - configMapRef:
+            name: node-exporter
+        image:  quay.io/prometheus/node-exporter:v1.6.0
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 9100
+        name: node-exporter
+        ports:
+        - containerPort: 9100
+          name: tcp-metrics
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 9100
+        resources: {}
+        volumeMounts:
+        - mountPath: /host/proc
+          name: node-exporter-proc
+        - mountPath: /host/root
+          name: node-exporter-root
+        - mountPath: /host/sys
+          name: node-exporter-sys
+      volumes:
+      - hostPath:
+          path: /proc
+        name: node-exporter-proc
+      - hostPath:
+          path: /root
+        name: node-exporter-root
+      - hostPath:
+          path: /sys
+        name: node-exporter-sys
+  updateStrategy: {}
+status:
+  currentNumberScheduled: 0
+  desiredNumberScheduled: 0
+  numberMisscheduled: 0
+  numberReady: 0

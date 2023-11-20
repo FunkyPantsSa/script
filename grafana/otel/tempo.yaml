@@ -1,0 +1,183 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  default: http://tempo
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: tempo
+  name: endpoint-tempo
+  namespace: otel
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: tempo
+  name: tempo
+  namespace: otel
+---
+apiVersion: v1
+data:
+  tempo.yaml: |
+    multitenancy_enabled: false
+    usage_report:
+      reporting_enabled: true
+    compactor:
+      compaction:
+        block_retention: 240h
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: "0.0.0.0:4317"
+            http:
+              endpoint: "0.0.0.0:4318"
+    ingester: {}
+    server:
+      http_listen_port: 3100
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+        wal:
+          path: /var/tempo/wal
+    querier: {}
+    query_frontend: {}
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: tempo
+  name: tempo-config
+  namespace: otel
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: tempo
+  name: tempo-storage
+  namespace: otel
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: local-path
+status: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: tempo
+  name: tempo
+  namespace: otel
+spec:
+  ports:
+  - name: http
+    port: 3100
+    protocol: TCP
+    targetPort: http
+  - name: http-otlp
+    port: 4318
+    protocol: TCP
+    targetPort: http-otlp
+  - name: grpc-otlp
+    port: 4317
+    protocol: TCP
+    targetPort: grpc-otlp
+  selector:
+    app: tempo
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: tempo,tempo-config
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: tempo
+  name: tempo
+  namespace: otel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  serviceName: tempo-headless
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/tempo: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        hash.configmap.octohelm.tech/tempo-config: 795793effca62190de1bc31edce13418324dccfc8b4f042d655c9f0b82ab1928
+        reload.octohelm.tech/configmap: tempo,tempo-config
+      creationTimestamp: null
+      labels:
+        app: tempo
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - -config.file=/conf/tempo/tempo.yaml
+        - -mem-ballast-size-mbs=1024
+        envFrom:
+        - configMapRef:
+            name: tempo
+        image:  docker.io/grafana/tempo:2.1.1
+        name: tempo
+        ports:
+        - containerPort: 4317
+          name: grpc-otlp
+          protocol: TCP
+        - containerPort: 3100
+          name: http
+          protocol: TCP
+        - containerPort: 4318
+          name: http-otlp
+          protocol: TCP
+        resources: {}
+        volumeMounts:
+        - mountPath: /var/tempo
+          name: tempo-storage
+        - mountPath: /conf/tempo/tempo.yaml
+          name: tempo-config
+          subPath: tempo.yaml
+      volumes:
+      - name: tempo-storage
+        persistentVolumeClaim:
+          claimName: tempo-storage
+      - configMap:
+          name: tempo-config
+        name: tempo-config
+  updateStrategy: {}
+status:
+  availableReplicas: 0
+  replicas: 0

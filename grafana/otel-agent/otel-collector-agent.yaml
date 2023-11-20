@@ -1,0 +1,204 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: otel-agent
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  default: http://otel-collector-agent
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-agent
+  name: endpoint-otel-collector-agent
+  namespace: otel-agent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-agent
+  name: otel-collector-agent
+  namespace: otel-agent
+---
+apiVersion: v1
+data:
+  otel-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+      loki:
+        protocols:
+          http:
+            endpoint: "0.0.0.0:3100"
+        use_incoming_timestamp: true
+      prometheus/otel-collector:
+        config:
+          scrape_configs:
+            - job_name: otel-collector
+              scrape_interval: 10s
+              static_configs:
+                - targets:
+                    - localhost:8888
+    exporters:
+      logging: {}
+      otlp:
+        endpoint: http://otel-collector-ingester.otel:4317
+        tls:
+          insecure: true
+    processors:
+      batch: {}
+      memory_limiter:
+        limit_mib: 400
+        spike_limit_mib: 100
+        check_interval: 5s
+    extensions:
+      zpages: {}
+      memory_ballast:
+        size_mib: 165
+    service:
+      pipelines:
+        metrics:
+          receivers:
+            - otlp
+            - prometheus/otel-collector
+          processors:
+            - batch
+          exporters:
+            - otlp
+            - logging
+        logs:
+          receivers:
+            - loki
+          processors:
+            - batch
+          exporters:
+            - otlp
+            - logging
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - otlp
+            - logging
+      extensions:
+        - zpages
+        - memory_ballast
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-agent
+  name: otel-collector-agent-config
+  namespace: otel-agent
+---
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-agent
+  name: otel-collector-agent
+  namespace: otel-agent
+spec:
+  ports:
+  - name: http-otlp
+    port: 4318
+    protocol: TCP
+    targetPort: http-otlp
+  - name: grpc-otlp
+    port: 4317
+    protocol: TCP
+    targetPort: grpc-otlp
+  - name: http-loki
+    port: 3100
+    protocol: TCP
+    targetPort: http-loki
+  selector:
+    app: otel-collector-agent
+status:
+  loadBalancer: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    reload.octohelm.tech/configmap: otel-collector-agent-config,otel-collector-agent
+  creationTimestamp: null
+  labels:
+    app.octohelm.tech/name: otel-collector-agent
+  name: otel-collector-agent
+  namespace: otel-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector-agent
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        hash.configmap.octohelm.tech/otel-collector-agent: 44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
+        hash.configmap.octohelm.tech/otel-collector-agent-config: f34e48c3af00985e0fcec96c5e2573a9ab8333848048ca360d47bcd10d659062
+        reload.octohelm.tech/configmap: otel-collector-agent-config,otel-collector-agent
+      creationTimestamp: null
+      labels:
+        app: otel-collector-agent
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - --config=/conf/otel/otel-config.yaml
+        envFrom:
+        - configMapRef:
+            name: otel-collector-agent
+        image:  docker.io/otel/opentelemetry-collector-contrib:0.80.0
+        name: otel-collector
+        ports:
+        - containerPort: 4317
+          name: grpc-otlp
+          protocol: TCP
+        - containerPort: 3100
+          name: http-loki
+          protocol: TCP
+        - containerPort: 4318
+          name: http-otlp
+          protocol: TCP
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: 200m
+            memory: 400Mi
+        volumeMounts:
+        - mountPath: /conf/otel/otel-config.yaml
+          name: otel-collector-agent-config
+          subPath: otel-config.yaml
+      volumes:
+      - configMap:
+          name: otel-collector-agent-config
+        name: otel-collector-agent-config
+status: {}
