@@ -21,7 +21,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  GF_SECURITY_ADMIN_PASSWORD: Industai@123
+  GF_SECURITY_ADMIN_PASSWORD: admin
 kind: ConfigMap
 metadata:
   creationTimestamp: null
@@ -537,11 +537,14 @@ metadata:
   name: grafana
   namespace: otel
 spec:
+  type: NodePort
   ports:
   - name: http
     port: 3000
+    nodePort: 30000
     protocol: TCP
     targetPort: http
+
   selector:
     app: grafana
 status:
@@ -667,7 +670,7 @@ metadata:
   namespace: otel
 spec:
   rules:
-  - host: grafana.dev.innoai.tech
+  - host: grafana.xxx.com
     http:
       paths:
       - backend:
