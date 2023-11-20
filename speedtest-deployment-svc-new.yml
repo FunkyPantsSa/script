@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.octohelm.tech/name: speedtest
+  name: speedtest
+  namespace: kube-system
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: speedtest
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: speedtest
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - arm64
+      containers:
+      - args:
+        - serve
+        env:
+        - name: SPEEDTEST_SERVER_ADDR
+          value: :80
+        envFrom:
+        - configMapRef:
+            name: speedtest
+        #image: 10.68.37.32:5000/inner/speedtest:v0.0.0-20230613112752-2f1750106fd0
+        image: maqingjie/speedtest:v0.0.0-20230613112752-2f1750106fd0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: server
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 80
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+
+
+---
+apiVersion: v1
+data:
+  SPEEDTEST_LOG_ASYNC: "false"
+  SPEEDTEST_LOG_FILTER: Always
+  SPEEDTEST_LOG_LEVEL: info
+  SPEEDTEST_SERVER_ENABLE_DEBUG: "false"
+  SPEEDTEST_TRACE_COLLECTOR_ENDPOINT: " "
+kind: ConfigMap
+metadata:
+  labels:
+    app.octohelm.tech/name: speedtest
+  name: speedtest
+  namespace: kube-system
+
+
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: speedtest
+  namespace: kube-system
+spec:
+  clusterIP: 
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    app: speedtest
+  sessionAffinity: None
+  type: NodePort
