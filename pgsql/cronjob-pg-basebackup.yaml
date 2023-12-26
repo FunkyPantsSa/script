@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-basebackup 
+  namespace: middleware
+spec:
+  schedule: "0 1 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: pg-basebackup
+            image: {{ POSTGRES_IMAGE }} 
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: REPLICATION_USER
+              value: {{ PG_USER }}
+            - name: REPLICATION_PASS
+              value: {{ PG_PASS }}
+            - name: DEFAULT_ENCODING 
+              value: UTF8
+            - name: TZ
+              value: Asia/Shanghai
+            command:
+            - /bin/sh
+            - -c
+            - /data/backup/pg_base_backup_cron.sh 
+            resources:
+              limits:
+                cpu: "1"
+                memory: 2Gi
+              requests:
+                cpu: 100m
+                memory: 100M
+            volumeMounts:
+            - mountPath: /data/backup
+              name: data
+          restartPolicy: OnFailure
+          volumes:
+          - hostPath:
+              path: /data/pgsql_backup
+              type: DirectoryOrCreate
+            name: data

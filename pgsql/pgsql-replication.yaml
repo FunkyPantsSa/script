@@ -1,0 +1,96 @@
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: pgsql-replication
+  name: pgsql-replication
+  namespace: middleware
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: pgsql-replication
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: pgsql-replication
+    spec:
+      containers:
+      - env:
+        - name: REPLICATION_USER
+          value: "{{ PG_USER }}"
+        - name: REPLICATION_PASS
+          value: "{{ PG_PASS }}"
+        - name: REPLICATE_FROM
+          value: pgsql.middleware 
+        - name: REPLICATE_PORT
+          value: "5432"
+        - name: SYNCHRONOUS_COMMIT 
+          value: "off"
+        - name: DEFAULT_ENCODING
+          value: UTF8
+        - name: POSTGRES_MULTIPLE_EXTENSIONS
+          value: postgis,hstore
+        - name: MAX_CONNECTIONS
+          value: "2000"
+        - name: PG_WAL_KEEP_SEGMENTS
+          value: "50"
+        - name: PG_WORK_MEM 
+          value: "524kB"
+        - name: PG_SHARED_BUFFERS 
+          value: "2GB"
+        - name: PG_EFFECTIVE_CACHE_SIZE 
+          value: "6GB"
+        - name: PG_MAINTAINANCE_WORK_MEM 
+          value: "512MB"
+        image: {{ POSTGRES_IMAGE }}
+        imagePullPolicy: IfNotPresent
+        name: postgis
+        resources:
+          limits:
+            cpu: "4"
+            memory: 8Gi
+          requests:
+            cpu: "1"
+            memory: 2Gi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/postgresql
+          name: data
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        node.kubernetes.io/pgsql: "replication"
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /data/pgsql_replication/data
+          type: DirectoryOrCreate
+        name: data
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgsql-replication
+  namespace: middleware
+spec:
+  ports:
+  - name: 5432-5432
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: pgsql-replication
+  type: ClusterIP
+

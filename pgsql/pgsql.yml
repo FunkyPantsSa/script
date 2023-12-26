@@ -1,0 +1,109 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: middleware
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: pgsql
+  name: pgsql
+  namespace: middleware
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: pgsql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: pgsql
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_USER
+          value: root
+        - name: POSTGRES_PASS
+          value: Ai@sasdwAD.PG!231206
+        - name: REPLICATION_USER
+          value: rbackup
+        - name: REPLICATION_PASS
+          value: Bak@pg.231206sasafd
+        - name: DEFAULT_ENCODING
+          value: UTF8
+        - name: POSTGRES_DBNAME
+          value: postgres,
+        - name: POSTGRES_MULTIPLE_EXTENSIONS
+          value: postgis,hstore
+        - name: MAX_CONNECTIONS
+          value: "2000"
+        - name: PG_WAL_KEEP_SEGMENTS
+          value: "100"
+        - name: PG_WORK_MEM 
+          value: "524kB"
+        - name: PG_SHARED_BUFFERS 
+          value: "2GB"
+        - name: PG_EFFECTIVE_CACHE_SIZE 
+          value: "6GB"
+        - name: PG_MAINTAINANCE_WORK_MEM 
+          value: "512MB"
+        image: postgresql-postgis-ai:11.0-2.5-2.2 
+        imagePullPolicy: IfNotPresent
+        name: postgis
+        resources:
+          limits:
+            cpu: "4"
+            memory: 8Gi
+          requests:
+            cpu: "1"
+            memory: 2Gi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/lib/postgresql
+          name: data
+        - mountPath: /data/backup
+          name: backup
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /data/pgsql/data
+          type: DirectoryOrCreate
+        name: data
+      - hostPath:
+          path: /data/pgsql_backup
+          type: DirectoryOrCreate
+        name: backup
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgsql
+  namespace: middleware
+spec:
+  ports:
+  - name: 5432-5432
+    nodePort: 25434
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    app: pgsql
+  type: NodePort
+
