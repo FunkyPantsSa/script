@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ftp
+  namespace: middleware
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ftp
+  template:
+    metadata:
+      labels:
+        app: ftp
+    spec:
+      volumes:
+      - name: ftp-data
+        hostPath:
+          path: /data/ftp/
+      containers:
+      - name: ftp-container
+        image: fauria/vsftpd
+        ports:
+        - containerPort: 31110
+          protocol: TCP
+        - containerPort: 31111
+          protocol: TCP
+        - containerPort: 31112
+          protocol: TCP
+        - containerPort: 31113
+          protocol: TCP
+        - containerPort: 31114
+          protocol: TCP
+        - containerPort: 31115
+          protocol: TCP
+        - containerPort: 21
+          protocol: TCP
+        volumeMounts:
+        - mountPath: "/home/vsftpd"
+          name: ftp-data
+        env:
+        - name: FTP_USER
+          value: "ftpuser"
+        - name: FTP_PASS
+          value: "W9pM7%#6K!Yb"
+          # 随机最大端口与最小端口，要与上面设置的匹配
+        - name: PASV_MIN_PORT
+          value: "31110"
+        - name: PASV_MAX_PORT
+          value: "31115"
+        - name: PASV_ENABLE
+          value: "yes"
+          # 服务器传回的IP地址，一般为对外公网地址，即客户端连接ftp所用的地址。
+        - name: PASV_ADDRESS
+          value: "172.20.50.81"
+        #- name: PASV_ADDRESS
+        #  valueFrom:
+        #    fieldRef:
+        #      fieldPath: status.hostIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ftp-service
+  labels:
+    app: ftp-service
+  namespace: middleware
+spec:
+  type: NodePort
+  # 除21端口映射外，其他端口需保持一致
+  ports:
+    - name: ftp-21
+      nodePort: 30021
+      port: 21
+    - name: ftp-31110
+      nodePort: 31110
+      port: 31110
+    - name: ftp-31111
+      nodePort: 31111
+      port: 31111
+    - name: ftp-31112
+      nodePort: 31112
+      port: 31112
+    - name: ftp-31113
+      nodePort: 31113
+      port: 31113
+    - name: ftp-31114
+      nodePort: 31114
+      port: 31114
+    - name: ftp-31115
+      nodePort: 31115
+      port: 31115
+  selector:
+    app: ftp
+
