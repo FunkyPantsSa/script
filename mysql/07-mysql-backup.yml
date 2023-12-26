@@ -21,7 +21,7 @@ spec:
                   BACKUP_DIR="/backup/mysql"
                   find $BACKUP_DIR -type d -mtime +14|xargs rm -rf
                   mkdir -p $BACKUP_DIR/$(date +%F)
-                  mysqldump -h 11.192.10.192 -P 3306 -u root -pkkkkmai@2023 --all-databases > $BACKUP_DIR/$(date +%F)/all-databases-$(date +%T).sql
+                  mysqldump -h xxx.xxx.xx.x -P 3306 -u root -p  --all-databases > $BACKUP_DIR/$(date +%F)/all-databases-$(date +%T).sql
               volumeMounts:
                 - name: data
                   mountPath: /backup/mysql
