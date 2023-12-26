@@ -1,0 +1,143 @@
+apiVersion: v1
+data:
+  otel-collector-conf.yaml: |
+    # Based on information on https://opentelemetry.io/docs/collector/configuration/
+    receivers:
+      # Data sources: traces, metrics, logs
+      otlp: # Allow sending data via OTLP protocol
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      # Data sources: metrics
+      prometheus: # Scrape self
+        config:
+          scrape_configs:
+            - job_name: mimir
+              static_configs:
+                - targets: ['mimir:8001']
+                  labels:
+                    container: 'mimir'
+                    scraped_by: otel-collector-remote-write
+
+    processors:
+      batch:
+
+    exporters:
+      prometheusremotewrite:
+        endpoint: http://mimir:8001/api/v1/push
+
+    extensions:
+      health_check:
+      pprof:
+      zpages:
+
+    service:
+      extensions: [health_check, pprof, zpages]
+      pipelines:
+        metrics:
+          receivers: [otlp, prometheus]
+          processors: [batch]
+          exporters: [prometheusremotewrite]
+kind: ConfigMap
+metadata:
+  name: otel-conf
+  namespace: loki 
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: otel-collector
+  name: otel-collector
+  namespace: loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - image: docker.io/otel/opentelemetry-collector-contrib:0.84.0
+          args:
+           - --config=/etc/otelcol-contrib/otel-collector-conf.yaml
+          name: otel-collector
+          ports:
+            - containerPort: 1888
+              hostPort: 1888
+              protocol: TCP
+            - containerPort: 8888
+              hostPort: 8888
+              protocol: TCP
+            - containerPort: 8889
+              hostPort: 8889
+              protocol: TCP
+            - containerPort: 13133
+              hostPort: 13133
+              protocol: TCP
+            - containerPort: 4317
+              hostPort: 4317
+              protocol: TCP
+            - containerPort: 4318
+              hostPort: 4318
+              protocol: TCP
+            - containerPort: 55679
+              hostPort: 55679
+              protocol: TCP
+          resources: {}
+          volumeMounts:
+            - mountPath: /etc/otelcol-contrib/otel-collector-conf.yaml
+              name: conf
+              subPath: otel-collector-conf.yaml
+      restartPolicy: Always
+      volumes:
+        - name: conf
+          configMap:
+            name: otel-conf
+            items:
+            - key: otel-collector-conf.yaml 
+              path: otel-collector-conf.yaml
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: otel-collector
+  name: otel-collector
+  namespace: loki
+spec:
+  ports:
+    - name: "1888"
+      port: 1888
+      targetPort: 1888
+    - name: "8888"
+      port: 8888
+      targetPort: 8888
+    - name: "8889"
+      port: 8889
+      targetPort: 8889
+    - name: health-check
+      port: 13133
+      targetPort: 13133
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    - name: zpages
+      port: 55679
+      targetPort: 55679
+  selector:
+    app: otel-collector

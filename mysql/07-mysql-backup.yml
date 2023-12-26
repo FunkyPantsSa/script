@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mysql-backup-cronjob
+  namespace: model
+spec:
+  schedule: "0 17 * * *"  # 每天凌晨1点执行备份 注意：UTC时间+8
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            # MySQL备份容器镜像
+            # 恢复命令: mysql -h 10.196.10.192 -P 3306 -u root -pDmai@2023 < $BACKUP_DIR/$(date +%F)/all-databases-$(date +%T).sql
+            - name: mysql-backup
+              image:  harbor.xffuture.com/model/mysql:8.0.34
+              command:
+                - "/bin/sh"
+                - "-c"
+                - |
+                  BACKUP_DIR="/backup/mysql"
+                  find $BACKUP_DIR -type d -mtime +14|xargs rm -rf
+                  mkdir -p $BACKUP_DIR/$(date +%F)
+                  mysqldump -h 11.192.10.192 -P 3306 -u root -pkkkkmai@2023 --all-databases > $BACKUP_DIR/$(date +%F)/all-databases-$(date +%T).sql
+              volumeMounts:
+                - name: data
+                  mountPath: /backup/mysql
+                  subPath: mysql-backup
+          restartPolicy: OnFailure
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: mysql-backup-pvc  # 持久卷声明
+  successfulJobsHistoryLimit: 3  # 保留最近3次成功的备份记录

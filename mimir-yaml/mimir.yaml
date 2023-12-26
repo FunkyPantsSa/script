@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  creationTimestamp: null
+  labels:
+    app: mimir-claim0
+  name: mimir-claim0
+  namespace: loki
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10000Mi
+
+---
+
+apiVersion: v1
+data:
+  mimir-conf.yaml: "multitenancy_enabled: false\n\ndistributor:\n  pool:\n    health_check_ingesters:
+    true\n  ring:\n    instance_addr: 127.0.0.1\n    kvstore:\n      store: memberlist\n\ningester_client:\n
+    \ grpc_client_config:\n    # Configure the client to allow messages up to 100MB.\n
+    \   max_recv_msg_size: 104857600\n    max_send_msg_size: 104857600\n    grpc_compression:
+    gzip\n\ningester:\n  ring:\n    # We want to start immediately.\n    final_sleep:
+    0s\n    num_tokens: 512\n    instance_addr: 127.0.0.1\n    kvstore:\n      store:
+    memberlist\n    replication_factor: 1\n\nstore_gateway:\n  sharding_ring:\n    replication_factor:
+    1\n\nblocks_storage:\n  backend: filesystem\n\n  bucket_store:\n    sync_dir:
+    /data/tsdb-sync\n\n  tsdb:\n    dir: /data/tsdb \n\n  filesystem:\n    dir: /data/mimir-ingester-blocks\n
+    \  \n\nruler:\n  poll_interval: 2s\n  ring:\n    kvstore:\n      store: memberlist\n\nruler_storage:\n
+    \ backend: filesystem\n  filesystem:\n    dir: /data/mimir-ingester-ruler\n\nlimits:\n
+    \ # native_histograms_ingestion_enabled: true\n  compactor_blocks_retention_period:
+    1y\n"
+kind: ConfigMap
+metadata:
+  name: mimir-conf
+  namespace: loki
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: mimir
+  name: mimir
+  namespace: loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mimir
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: mimir
+    spec:
+      containers:
+        - args:
+           - -target=all
+           - -auth.multitenancy-enabled=false
+           - -server.http-listen-port=8001
+           - -server.grpc-listen-port=9001
+           - -config.file=/mimir/config/mimir-conf.yaml
+           - -log.level=debug
+          image: docker.io/grafana/mimir:2.10.0
+          name: mimir
+          ports:
+            - containerPort: 8001
+              #hostPort: 8001
+              protocol: TCP
+            - containerPort: 9001
+              #hostPort: 9001
+              protocol: TCP
+          resources: {}
+          volumeMounts:
+            - mountPath: /mimir/config/mimir-conf.yaml
+              name: conf
+              subPath: mimir-conf.yaml
+            - mountPath: /data
+              name: mimir-claim0
+      restartPolicy: Always
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      volumes:
+        - name: conf 
+          configMap:
+            name: mimir-conf
+            items:
+            - key: mimir-conf.yaml
+              path: mimir-conf.yaml 
+        - name: mimir-claim0
+          persistentVolumeClaim:
+            claimName: mimir-claim0
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: mimir
+  name: mimir
+  namespace: loki
+spec:
+  ports:
+    - name: "8001"
+      port: 8001
+      targetPort: 8001
+    - name: "9001"
+      port: 9001
+      targetPort: 9001
+  selector:
+    app: mimir
+  type: ClusterIP
