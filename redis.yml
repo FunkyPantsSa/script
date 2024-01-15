@@ -1,0 +1,134 @@
+
+---
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: middleware
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      srv: redis
+  strategy:
+      type: Recreate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        srv: redis
+    spec:
+      containers:
+      - args:
+        - /usr/local/etc/redis/redis.conf
+        command:
+        - redis-server
+        image: docker.io/library/redis:6.0.9
+        imagePullPolicy: IfNotPresent
+        name: redis
+        resources:
+          limits:
+            cpu: 500m
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 20Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /usr/local/etc
+          name: etc
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: redis.conf
+            path: redis/redis.conf
+          name: redis-conf
+        name: etc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: middleware
+spec:
+  ports:
+  - name: redis-port
+    nodePort: 36479
+    port: 6379
+    protocol: TCP
+    targetPort: 6379
+  selector:
+    srv: redis
+  type: NodePort
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-conf
+  namespace: middleware
+data:
+  redis.conf: |-
+    daemonize no
+    bind 0.0.0.0
+    pidfile /data/redis.pid
+    port 6379
+    tcp-backlog 30000
+    timeout 0
+    tcp-keepalive 10
+    loglevel notice
+    logfile stdout
+    databases 16
+    #save 900 1
+    #save 300 10
+    #save 60 10000
+    stop-writes-on-bgsave-error no
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+    slave-serve-stale-data yes
+    slave-read-only yes
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-disable-tcp-nodelay no
+    slave-priority 100
+    requirepass redis123
+    maxclients 30000
+    appendonly no
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+    lua-time-limit 5000
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    latency-monitor-threshold 0
+    notify-keyspace-events KEA
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    list-max-ziplist-entries 512
+    list-max-ziplist-value 64
+    set-max-intset-entries 1000
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64
+    hll-sparse-max-bytes 3000
+    activerehashing yes
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit slave 256mb 64mb 60
+    client-output-buffer-limit pubsub 32mb 8mb 60
+    hz 10

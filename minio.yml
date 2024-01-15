@@ -1,0 +1,82 @@
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: middleware
+spec:
+  type: ClusterIP
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+  selector:
+    app: minio
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: minio-api-nodeport
+  namespace: middleware
+  labels:
+    app: minio
+spec:
+  ports:
+    - name: minio-api
+      protocol: TCP
+      port: 9000
+      targetPort: 9000
+      nodePort: 39000
+  selector:
+    app: minio
+  type: NodePort
+  sessionAffinity: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: middleware
+spec:
+  selector:
+    matchLabels:
+      app: minio
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+      - name: minio
+        #image: minio/minio
+        image: docker.io/minio/minio:RELEASE.2020-02-27T00-23-05Z
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/sh
+        - -c
+        - "mkdir -p /data/minio &&minio server /data/minio "
+        env:
+        - name: MINIO_ACCESS_KEY
+          value: "xeg9DK3BAN33PtACh5Jnh4CT" # 默认用户名
+        - name: MINIO_SECRET_KEY
+          value: "arPPcVE5KZBX54TB79bMBJdR2EAKJKSARUuM" # 默认密码
+        ports:
+        - name: api
+          containerPort: 9000
+          protocol: TCP
+        volumeMounts:
+        - name: storage
+          mountPath: "/data/minio"
+      volumes:
+      - hostPath:
+          path: /data/minio
+          #path: /data/bupi-test/pgsql/data
+          type: DirectoryOrCreate
+        name: storage
+      nodeSelector:
+        node-role.kubernetes.io/master: "true"
