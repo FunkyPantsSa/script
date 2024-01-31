@@ -33,15 +33,15 @@ spec:
         - name: POSTGRES_USER
           value: root
         - name: POSTGRES_PASS
-          value: Ai@sasdwAD.PG!231206
+          value: Ai@indust.PG!231206
         - name: REPLICATION_USER
           value: rbackup
         - name: REPLICATION_PASS
-          value: Bak@pg.231206sasafd
+          value: Bak@pg.231206indust
         - name: DEFAULT_ENCODING
           value: UTF8
         - name: POSTGRES_DBNAME
-          value: postgres,
+          value: postgres,transformer_substation,device_hub,ai_event_center,decoder_center,gas_station,auth_center
         - name: POSTGRES_MULTIPLE_EXTENSIONS
           value: postgis,hstore
         - name: MAX_CONNECTIONS
@@ -56,7 +56,7 @@ spec:
           value: "6GB"
         - name: PG_MAINTAINANCE_WORK_MEM 
           value: "512MB"
-        image: postgresql-postgis-ai:11.0-2.5-2.2 
+        image: maqingjie/postgis-11-mod:11.0-2.5-new
         imagePullPolicy: IfNotPresent
         name: postgis
         resources:
@@ -82,11 +82,11 @@ spec:
       terminationGracePeriodSeconds: 30
       volumes:
       - hostPath:
-          path: /data/pgsql/data
+          path: /mnt/minio/pgsql/data
           type: DirectoryOrCreate
         name: data
       - hostPath:
-          path: /data/pgsql_backup
+          path: /mnt/minio/pgsql_backup
           type: DirectoryOrCreate
         name: backup
 
@@ -106,4 +106,3 @@ spec:
   selector:
     app: pgsql
   type: NodePort
-
