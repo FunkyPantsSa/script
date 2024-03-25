@@ -63,8 +63,8 @@ spec:
         node-role.kubernetes.io/master: "true"
       containers:
         - name: kubepi
-          image: docker.io/kubeoperator/kubepi-server:latest
-          #image: kubeoperator/kubepi-server:v1.6.5
+          #image: docker.io/kubeoperator/kubepi-server:latest
+          image: kubeoperator/kubepi-server:v1.6.5
           imagePullPolicy: IfNotPresent 
           ports:
             - containerPort: 80
